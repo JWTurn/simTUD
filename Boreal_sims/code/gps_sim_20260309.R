@@ -141,7 +141,7 @@ np_per_core = ceiling(NP / ncores)
 
 out = sim_paths_issf(n_lists = ncores,
                      n_paths_per_list = np_per_core,
-                     n_steps_per_path = 10, # testing for now
+                     n_steps_per_path = 675, 
                      move_pars = this_move_pars,
                      R_env = W_issf_all,
                      R_mask = !is.na(W_issf_base), # so the caribou don't leave the domain where covariates are defined
@@ -157,12 +157,12 @@ out_dir = "/scratch/pt1/borealcaribou/outputs"
 if (dir.exists(out_dir)) {
   
   DATE_OUT = str_sub(str_replace_all(Sys.time(), "-", ""), 1, 8)
-  saveRDS(out, file.path(out_dir, "paths_NWT_", DATE_OUT, ".rds"))
+  saveRDS(out, file.path(out_dir, paste0("paths_NWT_", DATE_OUT, ".rds")))
   out_bind = do.call(rbind, out)
   
   v = vect(out_bind, geom = c("x", "y"))
   rv = rasterize(v, W_issf_base, fun = sum)
   
-  writeRaster(rv, file.path(out_dir, "TUD_NWT_", DATE_OUT, ".tif"), overwrite = TRUE)
+  writeRaster(rv, file.path(out_dir, paste0("TUD_NWT_", DATE_OUT, ".tif")), overwrite = TRUE)
 
 }
