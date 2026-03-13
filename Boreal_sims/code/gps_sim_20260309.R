@@ -2,44 +2,59 @@ library(tidyverse)
 library(terra)
 library(glmmTMB)
 library(reproducible)
+library(foreach)
+library(doParallel)
+library(data.table)
 
 source(file.path("code", "sim_paths.R"))
 
 # Read stuff in ####
 data_path = file.path('inputs')
-if (!dir.exists(data_path)) dir.create(data_path)
+if (!dir.exists(data_path)) {
+  dir.create(data_path)
+  
+  ntland = prepInputs(url = 'https://drive.google.com/file/d/1Xp2x3kTX0HteuBmio-tG1mOHoQvml39C/view?usp=share_link',
+                      fun = 'terra::rast',
+                      destinationPath = data_path,
+                      targetFile = 'ntland.tif')
+  
+  # # Peter note 2026/03/09 04:39 PM PDT: These might need to be terra::wrap()'d for the sharing as RDS file to work. Make a note about this for Julie tomorrow
+  # NTyearly = prepInputs(url = 'https://drive.google.com/file/d/1eprxug3JCNf3c2q7pItUszzjaGu1_fC9/view?usp=drive_link',
+  #                       destinationPath = data_path,
+  #                       fun = 'readRDS')
+  # 
+  # # Peter note 2026/03/09 04:40 PM PDT: Similar predicament here except maybe even worse because I can't even run str() on it. Difference may be because this one is a SpatVectorCollection and the other is a SpatRaster?
+  # NT5yearly = prepInputs(url = 'https://drive.google.com/file/d/19Srjt6yKTM-lJAYfzG5hWnh6f9AQ0bT7/view?usp=drive_link',
+  #                        destinationPath = data_path,
+  #                        fun = 'readRDS')
+  
+  # Peter note 2026/03/09 04:42 PM PDT: This is weirdly a list of length 1028, but the values (kappa, mu, shape, scale) appear to just be repeated. The list names have a bunch of random gibberish on there. Not sure what's up but can certainly at least just reduce to the first 4 elements?
+  NTdistparams = prepInputs(url = 'https://drive.google.com/file/d/1QGTdkrx_FKgmtsMwKly53uZXBzYcL44i/view?usp=drive_link',
+                            destinationPath = data_path,
+                            fun = 'readRDS')
+  
+  # Peter note 2026/03/09 04:49 PM PDT: Welp, this one just completely fails. It gives the following error message: "error reading from connection". Did some Googling and got very little help. Questions to ask Julie for troubleshooting: 1) what packages did she have loaded when making this? Is there anything other than a model data table in there? Maybe if I load some other packages it'll work? 2) Does it work on her computer (if she downloads from GDrive)? What about if she just reads the file that's presumably on her computer? Could it be some sort of corruption from the transfer?
+  ntmodel = prepInputs(url = 'https://drive.google.com/file/d/11td8Wbn2m_TbHVJJppgpfpuiE2cmQ1nP/view?usp=share_link',
+                       destinationPath = data_path,
+                       fun = 'load',
+                       targetFile = 'ntmodel.Rdata')
+  ntmod = ntmodel$ntmod
+  
+  # Peter note 2026/03/09 04:52 PM PDT: The only one that actually worked! Miraculous
+  ntstudyarea = prepInputs(url = 'https://drive.google.com/file/d/1YOsRhBImlNuoAU4Jkdkz9tMeTfPaF_jq/view?usp=drive_link',
+                           destinationPath = data_path)
+} else {
+  
+  ntland = rast(file.path(data_path, "ntland.tif"))
+  NTdistparams = readRDS(file.path(data_path, "NTdistparams.rds"))
+  ntstudyarea = vect(file.path(data_path, "ntstudyarea.shp"))
+  load(file.path(data_path, "ntmodel.RData"))
+  
+}
 
-ntland = prepInputs(url = 'https://drive.google.com/file/d/1Xp2x3kTX0HteuBmio-tG1mOHoQvml39C/view?usp=share_link',
-                     fun = 'terra::rast',
-                     destinationPath = data_path,
-                     targetFile = 'ntland.tif')
 
-# # Peter note 2026/03/09 04:39 PM PDT: These might need to be terra::wrap()'d for the sharing as RDS file to work. Make a note about this for Julie tomorrow
-# NTyearly = prepInputs(url = 'https://drive.google.com/file/d/1eprxug3JCNf3c2q7pItUszzjaGu1_fC9/view?usp=drive_link',
-#                       destinationPath = data_path,
-#                       fun = 'readRDS')
-# 
-# # Peter note 2026/03/09 04:40 PM PDT: Similar predicament here except maybe even worse because I can't even run str() on it. Difference may be because this one is a SpatVectorCollection and the other is a SpatRaster?
-# NT5yearly = prepInputs(url = 'https://drive.google.com/file/d/19Srjt6yKTM-lJAYfzG5hWnh6f9AQ0bT7/view?usp=drive_link',
-#                        destinationPath = data_path,
-#                        fun = 'readRDS')
-
-# Peter note 2026/03/09 04:42 PM PDT: This is weirdly a list of length 1028, but the values (kappa, mu, shape, scale) appear to just be repeated. The list names have a bunch of random gibberish on there. Not sure what's up but can certainly at least just reduce to the first 4 elements?
-NTdistparams = prepInputs(url = 'https://drive.google.com/file/d/1QGTdkrx_FKgmtsMwKly53uZXBzYcL44i/view?usp=drive_link',
-                          destinationPath = data_path,
-                          fun = 'readRDS')
+# If the directory already exists, assume we're running this and have already read in the files.
 NTdistparams = NTdistparams[1:4] # for some reason it adds extra parametrs on but they appear to be all the same, so I'm just going to keep the first four
-
-# Peter note 2026/03/09 04:49 PM PDT: Welp, this one just completely fails. It gives the following error message: "error reading from connection". Did some Googling and got very little help. Questions to ask Julie for troubleshooting: 1) what packages did she have loaded when making this? Is there anything other than a model data table in there? Maybe if I load some other packages it'll work? 2) Does it work on her computer (if she downloads from GDrive)? What about if she just reads the file that's presumably on her computer? Could it be some sort of corruption from the transfer?
-ntmodel = prepInputs(url = 'https://drive.google.com/file/d/11td8Wbn2m_TbHVJJppgpfpuiE2cmQ1nP/view?usp=share_link',
-                     destinationPath = data_path,
-                     fun = 'load',
-                     targetFile = 'ntmodel.Rdata')
-ntmodel = ntmodel$ntmod
-
-# Peter note 2026/03/09 04:52 PM PDT: The only one that actually worked! Miraculous
-ntstudyarea = prepInputs(url = 'https://drive.google.com/file/d/1YOsRhBImlNuoAU4Jkdkz9tMeTfPaF_jq/view?usp=drive_link',
-                         destinationPath = data_path)
 
 # Prep the arguments for the function ####
 
@@ -58,7 +73,7 @@ this_move_pars = c(gamma_shape = get_value_by_name(NTdistparams, "shape"),
 fix_na = function(x, replace_val = 0) ifelse(is.na(x), replace_val, x)
 
 # get all beta coefficients from model
-ntmod_sum = summary(ntmodel)
+ntmod_sum = summary(ntmod)
 beta_all = ntmod_sum$coefficients$cond[, 1] %>% fix_na
 
 lsl_var = str_detect(names(beta_all), "log\\(sl")
@@ -116,8 +131,17 @@ W_issf_ta = get_metric_raster(cta_var, metric_regex = "I\\(cos\\(ta_\\)\\)(:?)")
 W_issf_all = c(W_issf_base, W_issf_sl, W_issf_ta)
 
 # Run the function to simulate paths ####
-out = sim_paths_issf(n_paths_per_list = 5,
-                     n_steps_per_path = 250,
+ncores = as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK")) * as.numeric(Sys.getenv("SLURM_NTASKS_PER_NODE"))
+if (!is.finite(ncores)) ncores = 1
+message("Number of cores: ", ncores)
+registerDoParallel(cores = ncores)
+
+NP = 2000 # hopefully this is enough for a map!
+np_per_core = ceiling(NP / ncores)
+
+out = sim_paths_issf(n_lists = ncores,
+                     n_paths_per_list = np_per_core,
+                     n_steps_per_path = 10, # testing for now
                      move_pars = this_move_pars,
                      R_env = W_issf_all,
                      R_mask = !is.na(W_issf_base), # so the caribou don't leave the domain where covariates are defined
@@ -126,3 +150,19 @@ out = sim_paths_issf(n_paths_per_list = 5,
                      log_step_cos_angle_par = beta_all[lsl_cta_var],
                      log_sl_offset = 1, # because all the logs in this model are log(... + 1)
                      n_print = 10)
+
+# FOR CLUSTER ONLY
+out_dir = "/scratch/pt1/borealcaribou/outputs"
+
+if (dir.exists(out_dir)) {
+  
+  DATE_OUT = str_sub(str_replace_all(Sys.time(), "-", ""), 1, 8)
+  saveRDS(out, file.path(out_dir, "paths_NWT_", DATE_OUT, ".rds"))
+  out_bind = do.call(rbind, out)
+  
+  v = vect(out_bind, geom = c("x", "y"))
+  rv = rasterize(v, W_issf_base, fun = sum)
+  
+  writeRaster(rv, file.path(out_dir, "TUD_NWT_", DATE_OUT, ".tif"), overwrite = TRUE)
+
+}
