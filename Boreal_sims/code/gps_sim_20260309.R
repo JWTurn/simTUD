@@ -136,7 +136,7 @@ if (!is.finite(ncores)) ncores = 1
 message("Number of cores: ", ncores)
 registerDoParallel(cores = ncores)
 
-NP = 2000 # hopefully this is enough for a map!
+NP = 50000 # hopefully this is enough for a map!
 np_per_core = ceiling(NP / ncores)
 
 out = sim_paths_issf(n_lists = ncores,
@@ -161,7 +161,7 @@ if (dir.exists(out_dir)) {
   out_bind = do.call(rbind, out)
   
   v = vect(out_bind, geom = c("x", "y"))
-  rv = rasterize(v, W_issf_base, fun = sum)
+  rv = rasterize(v, W_issf_base, fun = sum, background = 0)
   
   writeRaster(rv, file.path(out_dir, paste0("TUD_NWT_", DATE_OUT, ".tif")), overwrite = TRUE)
 

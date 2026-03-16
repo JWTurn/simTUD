@@ -399,6 +399,7 @@ sim_paths_issf = function(n_lists = 1,
         , ..tmp0_names]
       
       if (i %% n_print == 0) message("Completed step ", i, " of ", n_steps_per_path)
+      gc()
       
     }  # End of i (individual steps)
     
